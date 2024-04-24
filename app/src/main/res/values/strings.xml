@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">RiffMatch</string>
+    <string name="title_arquivos">Carregar Arquivos</string>
+    <string name="title_metronomo">Metronomo</string>
+    <string name="title_acordes">Acordes</string>
+    <string name="button_aumentar_ritmo">Seta para cima</string>
+    <string name="button_diminuir_ritmo">Seta para baixo</string>
+    <string name="button_procurar_arquivo">Procurar arquivo</string>
+    <string name="button_enviar_arquivo">Enviar arquivo</string>
+    <string name="button_treinar_acordes">Treinar Acordes</string>
+    <string name="procurar_arquivo_prompt">Selecione um Arquivo MIDI</string>
+
+</resources>
