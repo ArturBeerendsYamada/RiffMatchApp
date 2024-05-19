@@ -1,22 +1,19 @@
 package com.example.riffmatch.ui.arquivos;
 
-import static androidx.core.content.ContextCompat.getSystemService;
-
 import android.Manifest;
-import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Message;
+import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -30,22 +27,16 @@ import androidx.lifecycle.ViewModelProvider;
 //imports para file picker
 import android.content.Intent;
 import android.net.Uri;
-import android.os.Bundle;
-import android.widget.Button;
-import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.UUID;
 
+import com.example.riffmatch.MainActivity;
+import com.example.riffmatch.MyBluetoothService;
 import com.example.riffmatch.databinding.FragmentArquivosBinding;
 
 public class ArquivosFragment extends Fragment {
@@ -53,8 +44,8 @@ public class ArquivosFragment extends Fragment {
     private static final UUID BLUETOOTH_SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private FragmentArquivosBinding binding;
     private byte[] MIDIfileData;
-
-    MyBluetoothService bluetoothService = new MyBluetoothService();
+    private Activity toastActivity;
+    private MyBluetoothService bluetoothService;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -84,7 +75,15 @@ public class ArquivosFragment extends Fragment {
             }
         });
 
-        binding.debugText.setText("AUDIO PER: " + ContextCompat.checkSelfPermission(getContext(), "android.permission.READ_MEDIA_AUDIO"));
+        binding.debugText.setText("Nenhum arquivo carregado");
+        toastActivity = getActivity();
+
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        binding = null;
     }
 
     //Based on https://developer.android.com/training/permissions/requesting
@@ -95,50 +94,16 @@ public class ArquivosFragment extends Fragment {
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
                 } else {
-                    Toast.makeText(getActivity(), "Permissão negada", Toast.LENGTH_LONG).show();
+                    Toast.makeText(toastActivity, "Permissão negada", Toast.LENGTH_LONG).show();
                 }
             });
 
-    private void enviarArquivo() {
-        //Based on https://developer.android.com/training/permissions/requesting
-        if (    ContextCompat.checkSelfPermission(getContext(), "android.permission.BLUETOOTH") == PackageManager.PERMISSION_DENIED ||
-                ContextCompat.checkSelfPermission(getContext(), "android.permission.BLUETOOTH_ADMIN") == PackageManager.PERMISSION_DENIED ||
-                ContextCompat.checkSelfPermission(getContext(), "android.permission.BLUETOOTH_CONNECT") == PackageManager.PERMISSION_DENIED) {
-            requestPermissionLauncher.launch("android.permission.BLUETOOTH");
-            requestPermissionLauncher.launch("android.permission.BLUETOOTH_ADMIN");
-            requestPermissionLauncher.launch("android.permission.BLUETOOTH_CONNECT");
-        }
-        //Based on https://stackoverflow.com/questions/52229135/trying-to-get-bluetoothadapter-cannot-resolve-method-getsystemservicejava-lan
-        BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        //Based on https://developer.android.com/develop/connectivity/bluetooth/setup
-        if (bluetoothAdapter == null) {
-            // Device doesn't support Bluetooth
-            Toast.makeText(getActivity(), "Falha ao acessar bluetooth do aparelho", Toast.LENGTH_LONG).show();
-        }
-        //Based on https://developer.android.com/develop/connectivity/bluetooth/find-bluetooth-devices
-        Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
-        BluetoothDevice BTDeviceRiffmatchESP = null;
-        for (BluetoothDevice device : pairedDevices) {
-            if (device.getName().contains("Riffmatch")) {
-                // Connect to the device
-                BTDeviceRiffmatchESP = device;
-                break;
-            }
-        }
-        if (BTDeviceRiffmatchESP != null) {
-            try {
-                ConnectThread connectThread = new ConnectThread(BTDeviceRiffmatchESP);
-                connectThread.start();
-            } catch (Exception e) {
-                Toast.makeText(getActivity(), "Bluetooth Connect Thread Failed", Toast.LENGTH_LONG).show();
-            }
-        } else {
-            Toast.makeText(getActivity(), "Riffmatch não pareado", Toast.LENGTH_LONG).show();
-        }
-
-    }
+    //==================================================================================================================================================
+    //                                                 PROCURAR ARQUIVOS - INICIO
+    //==================================================================================================================================================
 
     //Based on https://www.youtube.com/watch?v=ZpJ66yzj8pM
+    //Quando voltar da procura do arquivo
     @Override
     public void onActivityResult(int requestCode, int resultCode, @Nullable @org.jetbrains.annotations.Nullable Intent data) {
         if (requestCode == 100 && resultCode == getActivity().RESULT_OK && data != null) {
@@ -153,16 +118,11 @@ public class ArquivosFragment extends Fragment {
                 // Agora você pode manipular o conteúdo do arquivo MIDI
             } catch (IOException e) {
                 // Trate os erros de leitura do arquivo aqui
-                Toast.makeText(getActivity(), "Falha ao ler o arquivo", Toast.LENGTH_LONG).show();
+                Toast.makeText(toastActivity, "Falha ao ler o arquivo", Toast.LENGTH_LONG).show();
             }
 
-            MIDIHeaderInfo FileHeaderInfo = readMIDIHeader(MIDIfileData);
-            String debugTextContent = "Chunk Len: " + FileHeaderInfo.chunklen + "\n" +
-                    "Format: " + FileHeaderInfo.format + "\n" +
-                    "Num Tracks: " + FileHeaderInfo.ntracks + "\n" +
-                    "TickDiv: " + FileHeaderInfo.tickdiv;
-
-            binding.debugText.setText(debugTextContent);
+            String debugText = "Arquivo \"" + getFileName(uri) + "\" carregado.";
+            binding.debugText.setText(debugText);
         }
         super.onActivityResult(requestCode, resultCode, data);
     }
@@ -182,20 +142,96 @@ public class ArquivosFragment extends Fragment {
         try {
             startActivityForResult(Intent.createChooser(intent, "Selecione um Arquivo MIDI"), 100);
         } catch (Exception exception) {
-            Toast.makeText(getActivity(), "Por favor, instale um gerenciador de arquivos e tente de novo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(toastActivity, "Por favor, instale um gerenciador de arquivos e tente de novo.", Toast.LENGTH_SHORT).show();
         }
     }
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        binding = null;
+    private String getFileName(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            try (Cursor cursor = getActivity().getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex != -1) {
+                        result = cursor.getString(nameIndex);
+                    }
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.getLastPathSegment();
+        }
+        return result;
     }
+
+    //==================================================================================================================================================
+    //                                                 PROCURAR ARQUIVOS - FIM
+    //==================================================================================================================================================
+
+    //==================================================================================================================================================
+    //                                                 ENVIAR ARQUIVOS - INICIO
+    //==================================================================================================================================================
+
+    private void enviarArquivo() {
+        //Based on https://developer.android.com/training/permissions/requesting
+                if (MIDIfileData == null) {
+            Toast.makeText(toastActivity, "Nenhum arquivo carregado.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (    ContextCompat.checkSelfPermission(getContext(), "android.permission.BLUETOOTH") == PackageManager.PERMISSION_DENIED ||
+                ContextCompat.checkSelfPermission(getContext(), "android.permission.BLUETOOTH_ADMIN") == PackageManager.PERMISSION_DENIED ||
+                ContextCompat.checkSelfPermission(getContext(), "android.permission.BLUETOOTH_CONNECT") == PackageManager.PERMISSION_DENIED) {
+            requestPermissionLauncher.launch("android.permission.BLUETOOTH");
+            requestPermissionLauncher.launch("android.permission.BLUETOOTH_ADMIN");
+            requestPermissionLauncher.launch("android.permission.BLUETOOTH_CONNECT");
+        }
+        Context context = getContext();
+        if (context instanceof MainActivity) {
+            MainActivity activity = (MainActivity) context;
+            bluetoothService = activity.getBluetoothService();
+        } else {
+            throw new RuntimeException(context.toString()
+                    + " must be MainActivity");
+        }
+
+        //Based on https://stackoverflow.com/questions/52229135/trying-to-get-bluetoothadapter-cannot-resolve-method-getsystemservicejava-lan
+        BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        //Based on https://developer.android.com/develop/connectivity/bluetooth/setup
+        if (bluetoothAdapter == null) {
+            // Device doesn't support Bluetooth
+            Toast.makeText(toastActivity, "Falha ao acessar bluetooth do aparelho", Toast.LENGTH_LONG).show();
+        }
+        //Based on https://developer.android.com/develop/connectivity/bluetooth/find-bluetooth-devices
+        Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
+        BluetoothDevice BTDeviceRiffmatchESP = null;
+        for (BluetoothDevice device : pairedDevices) {
+            if (device.getName().contains("Riffmatch")) {
+                // Connect to the device
+                BTDeviceRiffmatchESP = device;
+                break;
+            }
+        }
+        if (BTDeviceRiffmatchESP != null) {
+            try {
+                ConnectThread connectThread = new ConnectThread(BTDeviceRiffmatchESP);
+                connectThread.start();
+
+            } catch (Exception e) {
+                Toast.makeText(toastActivity, "Bluetooth Connect Thread Failed", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Toast.makeText(toastActivity, "Riffmatch não pareado", Toast.LENGTH_LONG).show();
+        }
+
+    }
+
 
     //Based on https://developer.android.com/develop/connectivity/bluetooth/connect-bluetooth-devices
     private class ConnectThread extends Thread {
         private BluetoothSocket mmSocket = null;
         private final BluetoothDevice mmDevice;
+        private static final String TAG = "MY_APP_DEBUG_TAG";
 
         public ConnectThread(BluetoothDevice device) {
             // Use a temporary object that is later assigned to mmSocket
@@ -212,7 +248,7 @@ public class ArquivosFragment extends Fragment {
                 }
                 tmp = device.createRfcommSocketToServiceRecord(BLUETOOTH_SPP);
             } catch (IOException e) {
-                Toast.makeText(getActivity(), "Falha ao conectar com bluetooth", Toast.LENGTH_LONG).show();
+                Log.e(TAG, "Socket's create() method failed", e);
             }
             mmSocket = tmp;
         }
@@ -231,7 +267,7 @@ public class ArquivosFragment extends Fragment {
                 try {
                     mmSocket.close();
                 } catch (IOException closeException) {
-                    Toast.makeText(getActivity(), "Falha ao desconectar com bluetooth", Toast.LENGTH_LONG).show();
+                    Log.e(TAG, "Could not close the client socket", closeException);
                 }
                 return;
             }
@@ -246,119 +282,137 @@ public class ArquivosFragment extends Fragment {
             try {
                 mmSocket.close();
             } catch (IOException e) {
-                Toast.makeText(getActivity(), "Falha ao desconectar com bluetooth", Toast.LENGTH_LONG).show();
+                Log.e(TAG, "Could not close the client socket", e);
             }
         }
     }
 
-    //Based on https://developer.android.com/develop/connectivity/bluetooth/transfer-data
-    public class MyBluetoothService {
-        private static final String TAG = "MY_APP_DEBUG_TAG";
-        private Handler handler; // handler that gets info from Bluetooth service
-
-        // Defines several constants used when transmitting messages between the
-        // service and the UI.
-
-        public static final int MESSAGE_READ = 0;
-        public static final int MESSAGE_WRITE = 1;
-        public static final int MESSAGE_TOAST = 2;
-
-            // ... (Add other message types here as needed.)
-
-        private class ConnectedThread extends Thread {
-            private final BluetoothSocket mmSocket;
-            private final InputStream mmInStream;
-            private final OutputStream mmOutStream;
-            private byte[] mmBuffer; // mmBuffer store for the stream
-
-            public ConnectedThread(BluetoothSocket socket) {
-                mmSocket = socket;
-                InputStream tmpIn = null;
-                OutputStream tmpOut = null;
-
-                // Get the input and output streams; using temp objects because
-                // member streams are final.
-                try {
-                    tmpIn = socket.getInputStream();
-                } catch (IOException e) {
-                    Log.e(TAG, "Error occurred when creating input stream", e);
-                }
-                try {
-                    tmpOut = socket.getOutputStream();
-                } catch (IOException e) {
-                    Log.e(TAG, "Error occurred when creating output stream", e);
-                }
-
-                mmInStream = tmpIn;
-                mmOutStream = tmpOut;
-            }
-
-            public void run() {
-                mmBuffer = new byte[1024];
-                int numBytes; // bytes returned from read()
-
-                // Keep listening to the InputStream until an exception occurs.
-                while (true) {
-                    try {
-                        // Read from the InputStream.
-                        numBytes = mmInStream.read(mmBuffer);
-                        // Send the obtained bytes to the UI activity.
-                        Message readMsg = handler.obtainMessage(
-                                MESSAGE_READ, numBytes, -1,
-                                mmBuffer);
-                        readMsg.sendToTarget();
-                    } catch (IOException e) {
-                        Log.d(TAG, "Input stream was disconnected", e);
-                        break;
-                    }
-                }
-            }
-
-            // Call this from the main activity to send data to the remote device.
-            public void write(byte[] bytes) {
-                try {
-                    mmOutStream.write(bytes);
-
-                    // Share the sent message with the UI activity.
-                    Message writtenMsg = handler.obtainMessage(
-                            MESSAGE_WRITE, -1, -1, mmBuffer);
-                    writtenMsg.sendToTarget();
-                } catch (IOException e) {
-                    Log.e(TAG, "Error occurred when sending data", e);
-
-                    // Send a failure message back to the activity.
-                    Message writeErrorMsg =
-                            handler.obtainMessage(MESSAGE_TOAST);
-                    Bundle bundle = new Bundle();
-                    bundle.putString("toast",
-                            "Couldn't send data to the other device");
-                    writeErrorMsg.setData(bundle);
-                    handler.sendMessage(writeErrorMsg);
-                }
-            }
-
-            // Call this method from the main activity to shut down the connection.
-            public void cancel() {
-                try {
-                    mmSocket.close();
-                } catch (IOException e) {
-                    Log.e(TAG, "Could not close the connect socket", e);
-                }
-            }
-        }
-    }
 
     private void manageMyConnectedSocket(BluetoothSocket mmSocket) {
         MyBluetoothService.ConnectedThread connectedThread = bluetoothService.new ConnectedThread(mmSocket);
         connectedThread.start();
 
-        String message = "Hello World";
-        int i = 0;
+        String testMessage = "Hello World\n";
         String originalString = new String(MIDIfileData, StandardCharsets.UTF_8);
-        String[] splitStrings = originalString.split("\n");
-        byte[] messageBytes = splitStrings[0].getBytes();
-        connectedThread.write(messageBytes);
+        int endOfHeader = originalString.indexOf("MTrk");
+        String headerString = originalString.substring(0, endOfHeader);
+
+        byte[] messageBytes = originalString.getBytes();
+//        byte[] messageBytes = testMessage.getBytes();
+        connectedThread.write(MIDIfileData);
     }
+
+    //==================================================================================================================================================
+    //                                                 ENVIAR ARQUIVOS - FIM
+    //==================================================================================================================================================
+
+    //Based on https://developer.android.com/develop/connectivity/bluetooth/transfer-data
+//    public class MyBluetoothService {
+//        private static final String TAG = "MY_APP_DEBUG_TAG";
+//        private Handler handler; // handler that gets info from Bluetooth service
+//
+//        // Defines several constants used when transmitting messages between the
+//        // service and the UI.
+//
+//        public static final int MESSAGE_READ = 0;
+//        public static final int MESSAGE_WRITE = 1;
+//        public static final int MESSAGE_TOAST = 2;
+//
+//            // ... (Add other message types here as needed.)
+//
+//        private class ConnectedThread extends Thread {
+//            private final BluetoothSocket mmSocket;
+//            private final InputStream mmInStream;
+//            private final OutputStream mmOutStream;
+//            private byte[] mmBuffer; // mmBuffer store for the stream
+//
+//            public ConnectedThread(BluetoothSocket socket) {
+//                mmSocket = socket;
+//                InputStream tmpIn = null;
+//                OutputStream tmpOut = null;
+//
+//                // Get the input and output streams; using temp objects because
+//                // member streams are final.
+//                try {
+//                    tmpIn = socket.getInputStream();
+//                } catch (IOException e) {
+//                    Log.e(TAG, "Error occurred when creating input stream", e);
+//                }
+//                try {
+//                    tmpOut = socket.getOutputStream();
+//                } catch (IOException e) {
+//                    Log.e(TAG, "Error occurred when creating output stream", e);
+//                }
+//
+//                mmInStream = tmpIn;
+//                mmOutStream = tmpOut;
+//            }
+//
+//            public void run() {
+//                mmBuffer = new byte[1024];
+//                int numBytes; // bytes returned from read()
+//
+//                // Keep listening to the InputStream until an exception occurs.
+//                while (true) {
+//                    try {
+//                        // Read from the InputStream.
+//                        numBytes = mmInStream.read(mmBuffer);
+//                        // Send the obtained bytes to the UI activity.
+//                        Message readMsg = handler.obtainMessage(
+//                                MESSAGE_READ, numBytes, -1,
+//                                mmBuffer);
+//                        readMsg.sendToTarget();
+//                    } catch (IOException e) {
+//                        Log.d(TAG, "Input stream was disconnected", e);
+//                        break;
+//                    }
+//                }
+//            }
+//
+//            // Call this from the main activity to send data to the remote device.
+//            public void write(byte[] bytes) {
+//                try {
+//                    mmOutStream.write(bytes);
+//
+//                    // Share the sent message with the UI activity.
+//                    Message writtenMsg = handler.obtainMessage(
+//                            MESSAGE_WRITE, -1, -1, mmBuffer);
+//                    writtenMsg.sendToTarget();
+//                } catch (IOException e) {
+//                    Log.e(TAG, "Error occurred when sending data", e);
+//
+//                    // Send a failure message back to the activity.
+//                    Message writeErrorMsg =
+//                            handler.obtainMessage(MESSAGE_TOAST);
+//                    Bundle bundle = new Bundle();
+//                    bundle.putString("toast",
+//                            "Couldn't send data to the other device");
+//                    writeErrorMsg.setData(bundle);
+//                    handler.sendMessage(writeErrorMsg);
+//                }
+//            }
+//
+//            // Call this method from the main activity to shut down the connection.
+//            public void cancel() {
+//                try {
+//                    mmSocket.close();
+//                } catch (IOException e) {
+//                    Log.e(TAG, "Could not close the connect socket", e);
+//                }
+//            }
+//        }
+//    }
+//
+//    private void manageMyConnectedSocket(BluetoothSocket mmSocket) {
+//        MyBluetoothService.ConnectedThread connectedThread = bluetoothService.new ConnectedThread(mmSocket);
+//        connectedThread.start();
+//
+//        String message = "Hello World";
+//        String originalString = new String(MIDIfileData, StandardCharsets.UTF_8);
+//        String[] splitStrings = originalString.split("\n");
+//        byte[] messageBytes = splitStrings[0].getBytes();
+//        connectedThread.write(messageBytes);
+//    }
 
     //-------------- MIDI decoding --------------
     public class MIDIHeaderInfo {
