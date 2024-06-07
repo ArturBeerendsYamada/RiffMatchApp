@@ -1,5 +1,6 @@
 package com.example.riffmatch.ui.metronomo;
 
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -13,6 +14,7 @@ import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 
+import com.example.riffmatch.R;
 import com.example.riffmatch.databinding.FragmentMetronomoBinding;
 
 public class MetronomoFragment extends Fragment {
@@ -20,7 +22,12 @@ public class MetronomoFragment extends Fragment {
     private FragmentMetronomoBinding binding;
 
     private TextView textMetronomo;
-    private int metronomoBPM = 60;
+    private static int metronomoBPM = 60;
+    private boolean isPlaying = false;
+
+    public void setMetronomoBPM(int new_value){
+        metronomoBPM = new_value;
+    }
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -53,7 +60,28 @@ public class MetronomoFragment extends Fragment {
             }
         });
 
+        //Listener para botao de play/pause
+        binding.buttonPlaypause.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if(isPlaying){
+                    pausePlaying();
+                }
+                else {
+                    startPlaying();
+                }
+            }
+        });
+    }
 
+    private void startPlaying() {
+        MediaPlayer mediaPlayer = MediaPlayer.create(getContext(), R.raw.me);
+        mediaPlayer.start(); // no need to call prepare(); create() does that for you
+
+        isPlaying = true;
+    }
+
+    private void pausePlaying() {
+        isPlaying = false;
     }
 
     private void diminuirMetronomo() {

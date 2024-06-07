@@ -43,7 +43,7 @@ public class ArquivosFragment extends Fragment {
 
     private static final UUID BLUETOOTH_SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private FragmentArquivosBinding binding;
-    private byte[] MIDIfileData;
+    private static byte[] MIDIfileData;
     private Activity toastActivity;
     private MyBluetoothService bluetoothService;
 
@@ -75,7 +75,9 @@ public class ArquivosFragment extends Fragment {
             }
         });
 
-        binding.debugText.setText("Nenhum arquivo carregado");
+        if(MIDIfileData == null){
+            binding.debugText.setText("Nenhum arquivo carregado");
+        }
         toastActivity = getActivity();
 
     }
@@ -195,7 +197,6 @@ public class ArquivosFragment extends Fragment {
                     + " must be MainActivity");
         }
 
-        //Based on https://stackoverflow.com/questions/52229135/trying-to-get-bluetoothadapter-cannot-resolve-method-getsystemservicejava-lan
         BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         //Based on https://developer.android.com/develop/connectivity/bluetooth/setup
         if (bluetoothAdapter == null) {

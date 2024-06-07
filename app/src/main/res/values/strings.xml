@@ -9,5 +9,6 @@
     <string name="button_enviar_arquivo">Enviar arquivo</string>
     <string name="button_treinar_acordes">Treinar Acordes</string>
     <string name="procurar_arquivo_prompt">Selecione um Arquivo MIDI</string>
+    <string name="playpause">playpause</string>
 
 </resources>
